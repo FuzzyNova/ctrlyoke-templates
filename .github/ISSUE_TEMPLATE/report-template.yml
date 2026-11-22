@@ -1,0 +1,35 @@
+name: Report a template
+description: A template is broken, misleading, or unsafe.
+title: "Report: "
+labels: ["report"]
+body:
+  - type: input
+    id: template
+    attributes:
+      label: Template
+      description: The template's file name or id, such as octocat-review-branch.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What is wrong?
+      options:
+        - It does not work
+        - It does something its description does not say
+        - It looks malicious or unsafe
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: What happened, and which lines of the template are involved. Do not paste secrets or private code.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: ctrlyoke version
+      description: Shown in the ctrlyoke Settings drawer, or by `ctrlyoke --version`.

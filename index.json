@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "templates": [
+    {
+      "id": "nhickster-review-branch",
+      "name": "Review Branch",
+      "description": "Review the current branch against its base, fix what the review finds, and keep the tests passing.",
+      "tags": [],
+      "file": "nhickster-review-branch.ctrlyoke.yaml"
+    }
+  ]
+}

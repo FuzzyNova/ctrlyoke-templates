@@ -1,0 +1,56 @@
+schemaVersion: 1
+_templateMeta:
+  name: Review Branch
+  description: Review the current branch against its base, fix what the review finds, and keep the tests passing.
+  variables:
+    baseBranch:
+      type: text
+      default: main
+      description: The branch this work will merge into.
+    testCommand:
+      type: text
+      default: npm test
+      description: The command that runs your test suite (e.g. npm test, pytest, cargo test).
+    reviewHarness:
+      type: harness
+      default: claude-cli
+      description: Reviewing takes judgment, so pick a capable harness and model.
+    reviewModel:
+      type: model
+      harness: reviewHarness
+      default: opus
+
+harness: "{reviewHarness}"
+model: "{reviewModel}"
+
+steps:
+  - name: review
+    prompt: |
+      Review the work on this branch before it merges into {baseBranch}.
+
+      Start by reading what changed: run `git log {baseBranch}..HEAD` for the commits and
+      `git diff {baseBranch}...HEAD` for the committed changes. Uncommitted changes are here:
+      ~diff
+
+      Review it the way a careful senior engineer would:
+
+      1. Correctness first: logic errors, unhandled edge cases, broken error handling, races,
+         and behavior that no longer matches what callers expect.
+      2. Then security: untrusted input reaching a shell, a file path or a query; secrets in
+         code or logs; weakened checks.
+      3. Then tests: changed behavior with no test, and tests that would pass even if the code
+         were wrong.
+      4. Last, clarity and consistency with the code around it. Skip pure style nits.
+
+      Fix every real problem you find, with the smallest correct change, following the
+      codebase's existing patterns. Do not refactor unrelated code. If something looks wrong
+      but you are not sure, leave the code alone and list it as a question instead.
+
+      End with a short report: each problem found, what you changed, and any open questions.
+    endCondition:
+      script: "{testCommand}"
+      maxRetries: 3
+      retryPrompt: |
+        The tests fail after your review fixes. Fix the cause without skipping tests or
+        weakening assertions:
+        $endCondition:stdout

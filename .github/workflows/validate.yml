@@ -1,0 +1,31 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # Weekly, against the newest ctrlyoke release: catches templates a schema
+  # change made invalid. The fix is a migration pull request here.
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Validate templates against the latest ctrlyoke release
+        run: npm run validate
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+      - name: Check index.json is current
+        run: npm run index:check
