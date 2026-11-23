@@ -1,0 +1,201 @@
+schemaVersion: 1
+_templateMeta:
+  name: Update Agent Instructions
+  description: Create or update the instruction files AI coding agents read (Copilot instructions, CLAUDE.md, AGENTS.md), one file per area of the codebase. You approve the split, parallel steps write the files, and a review pass ties them together and commits.
+  author: nhickster
+  tags: [documentation, agents, instructions, parallel, loop]
+  variables:
+    layout:
+      type: select
+      options:
+        - "Copilot instruction files: a root .github/copilot-instructions.md, one .github/instructions/<area>.instructions.md per area with an applyTo glob, and a root CLAUDE.md and AGENTS.md that point to them"
+        - "Nested CLAUDE.md files: a root CLAUDE.md and one CLAUDE.md in each area's directory"
+        - "Nested AGENTS.md files: a root AGENTS.md and one AGENTS.md in each area's directory"
+        - "One root file only: a single AGENTS.md, with a CLAUDE.md that imports it"
+        - "Recommend a layout from the harnesses this repository is set up for, and ask me before planning"
+      default: "Recommend a layout from the harnesses this repository is set up for, and ask me before planning"
+      description: Where the instructions live. Existing instruction files in another layout are migrated into this one, after you approve the plan.
+    scope:
+      type: directory
+      default: .
+      description: The part of the repository to cover. Use . for all of it.
+    lineBudget:
+      type: text
+      default: "150"
+      description: The most lines one instruction file should have. Agents load these files often, so lean files stay useful.
+    extraGuidance:
+      type: text
+      multiline: true
+      description: Optional. Anything else every file should follow, such as a house style or topics to always cover.
+    orchestratorHarness:
+      type: harness
+      default: claude-cli
+      description: Runs the plan step and the review pass, which resumes the plan step's session.
+    orchestratorModel:
+      type: model
+      harness: orchestratorHarness
+      default: opus
+      description: Use a capable model; deciding the split and reviewing the files takes judgment.
+    writerHarness:
+      type: harness
+      default: claude-cli
+      description: Runs every queued step that writes one instruction file.
+    writerModel:
+      type: model
+      harness: writerHarness
+      default: sonnet
+      description: Each writer researches one area, so a faster, cheaper model is often enough.
+
+# One template both creates and updates. The plan step inventories what exists
+# and plans each file as create, update or delete, so a repository with no
+# instruction files and one with stale ones go through the same steps.
+#
+# Writers run in one parallel group in the shared checkout. Each one edits only
+# its own file and never commits; the review pass deletes retired files, writes
+# the root file that routes to the others, and makes the only commit.
+resumeSession: false
+priorContext: none
+harness: "{writerHarness}"
+model: "{writerModel}"
+executionMode: headless
+
+steps:
+  - name: plan
+    agent: workflow-orchestrator
+    mcpServers:
+      - ctrlyoke
+    prompt: |
+      Be my ctrlyoke orchestrator for this repository's AI agent instruction files: the
+      files coding agents read for project knowledge they can't easily get from the code.
+      Cover {scope}.
+
+      Layout: {layout}
+
+      Every file must stay under {lineBudget} lines and follow the content standard below.
+      Additional guidance from me (may be empty): {extraGuidance}
+
+      ## 1. Inventory
+
+      Find every existing instruction file, in any format: .github/copilot-instructions.md,
+      .github/instructions/**, CLAUDE.md and AGENTS.md at any depth, GEMINI.md, .cursor/rules,
+      .windsurfrules and similar. For each one, note what it covers, roughly how current it
+      is (`git log -1 --format=%h,%cs -- <file>`), and how much of it duplicates another
+      file.
+
+      Then survey the layout of {scope}: the main areas of the code, how big each one is,
+      and where conventions genuinely differ from one area to the next.
+
+      ## 2. Propose the split, and wait for me
+
+      Propose which instruction files should exist. Split by area only where an agent
+      working there needs knowledge that differs from the rest of the codebase; a small
+      area with nothing distinctive belongs in its parent's file or the root file. For each
+      file give:
+
+      - its path, and the directory or glob it applies to
+      - create, update, or delete (with where its useful content moves)
+      - a line on what it will cover
+
+      If the layout above asks you to recommend one, recommend it first, based on the
+      harnesses this repository is set up for (.github/, .claude/, .codex/ and similar) and
+      how each one discovers instruction files. If existing files use a different layout,
+      say how you will migrate them.
+
+      Show me the proposal and wait for my approval or changes before you queue anything.
+
+      ## 3. Queue the writers
+
+      Once I approve, use append_step to add ONE parallel group with one step per file to
+      create or update (set failFast to false). Don't queue the root file, pointer files or
+      deletions: the review pass handles those after the writers finish. If the group would
+      be very large, split it into a few consecutive groups.
+
+      Each writer runs in a fresh session with none of your reasoning, alongside the other
+      writers in the same checkout. Its prompt must be self-contained and must say:
+
+      - the exact file to write, the area it covers, and its front matter if the layout
+        needs one (for example an applyTo glob)
+      - the neighbouring files and what they cover, so it doesn't duplicate them
+      - for an update, to start from the existing file; for content moving in from a
+        deleted file, which file and which parts
+      - the content standard below, word for word, and the {lineBudget}-line limit
+      - to edit only its own file, never commit, and never run commands that change other
+        files
+
+      Content standard for every instruction file:
+
+      - Record only durable knowledge that a competent agent would not find quickly by
+        reading the code: gotchas, non-obvious couplings between files or layers,
+        conventions and the reasons for them, and mistakes that are easy to make here.
+        Leave out anything the code, the types or the README already make obvious.
+      - Verify every file, symbol and command you name against the current code. A stale
+        reference is worse than none.
+      - For an update: check each existing entry against the code and remove or correct
+        the ones that no longer hold. Then read what changed in the area since the file
+        was last edited (`git log <last commit of the file>..HEAD -- <area>`) and add what
+        those changes taught that clears the bar above.
+      - Prefer short rules with a one-line reason to long explanations. Tighten an
+        existing entry rather than adding a near-duplicate.
+      - End the turn with a short report: what was added, changed and removed, and why.
+
+      Then end your turn. A review pass runs automatically after the writers finish.
+    # The orchestrator's settings sit after the prompt so the template dialog
+    # asks for the layout and scope first. It runs interactively so you can
+    # steer the split before anything is written.
+    harness: "{orchestratorHarness}"
+    model: "{orchestratorModel}"
+    executionMode: interactive
+    # The review pass ends with one commit of the instruction files. Stop
+    # before planning unless this is a git repository with a clean tree, so
+    # that commit never picks up changes that aren't the workflow's.
+    preCondition:
+      script: git status --porcelain 2>&1
+      compareSource: stdout
+      operator: isEmpty
+      onFail: stopWorkflow
+
+finalStep:
+  name: review
+  agent: workflow-orchestrator
+  # Same harness as the plan step: a session can only be resumed on the harness
+  # that started it.
+  harness: "{orchestratorHarness}"
+  model: "{orchestratorModel}"
+  executionMode: interactive
+  mcpServers:
+    - ctrlyoke
+  # Resumes the plan step's session, so it remembers the approved split.
+  resumeSession: true
+  sessionId: 1
+  prompt: |
+    Resume your orchestrator session for the instruction files. The writers you queued
+    should have finished; use workflow_status and read_output for their reports.
+
+    1. Check every file you planned exists and meets the content standard and the
+       {lineBudget}-line limit. Spot-check the files, symbols and commands each one names
+       against the code. Fix what you find.
+    2. Remove duplication between files: each fact lives in the most specific file it
+       applies to.
+    3. Delete the files the plan retired (git rm), after confirming their useful content
+       moved.
+    4. Write or update the root file for the layout ({layout}). It holds what applies
+       everywhere, plus a table that tells an agent which file to read for which paths, so
+       harnesses that don't load instruction files by path can still find the right one.
+       Write any pointer files the layout calls for.
+    5. Commit the instruction files with a plain conventional commit message.
+
+    If a planned file is missing or a writer failed, use append_step to queue it again
+    and end your turn; this pass runs again afterwards. Otherwise finish with a summary:
+    the files created, updated and deleted, and anything that needs my decision.
+  # The review pass never runs alongside other steps, so it can require a clean
+  # tree when it ends. stderr is folded into stdout so a git error fails the
+  # check instead of leaving stdout empty and passing it.
+  endCondition:
+    script: git status --porcelain 2>&1
+    compareSource: stdout
+    operator: isEmpty
+    maxRetries: 2
+    retryPrompt: |
+      You left uncommitted changes. Finish the review and commit the instruction files
+      with a plain conventional commit message.
+      $endCondition:stdout

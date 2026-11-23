@@ -52,6 +52,20 @@
       ],
       "file": "second-opinion-review.ctrlyoke.yaml",
       "author": "nhickster"
+    },
+    {
+      "id": "update-agent-instructions",
+      "name": "Update Agent Instructions",
+      "description": "Create or update the instruction files AI coding agents read (Copilot instructions, CLAUDE.md, AGENTS.md), one file per area of the codebase. You approve the split, parallel steps write the files, and a review pass ties them together and commits.",
+      "tags": [
+        "documentation",
+        "agents",
+        "instructions",
+        "parallel",
+        "loop"
+      ],
+      "file": "update-agent-instructions.ctrlyoke.yaml",
+      "author": "nhickster"
     }
   ]
 }
