@@ -1,0 +1,127 @@
+schemaVersion: 1
+_templateMeta:
+  name: Second Opinion Review
+  description: Three harnesses review the branch in parallel without editing anything. A fourth step merges their findings, fixes the real problems, and keeps the tests passing.
+  author: nhickster
+  tags: [review, code-quality, git, parallel, testing]
+  variables:
+    baseBranch:
+      type: text
+      default: main
+      description: The branch this work will merge into.
+    testCommand:
+      type: text
+      default: npm test
+      description: The command that runs your test suite (e.g. npm test, pytest, cargo test).
+    reviewerAHarness:
+      type: harness
+      default: claude-cli
+      description: First reviewer. Must be Claude Code or Codex CLI, because this reviewer runs in a read-only sandbox; any other harness fails at launch.
+    reviewerAModel:
+      type: model
+      harness: reviewerAHarness
+      default: opus
+    reviewerBHarness:
+      type: harness
+      default: codex-cli
+      description: Second reviewer. Must be Claude Code or Codex CLI, because this reviewer runs in a read-only sandbox; any other harness fails at launch.
+    reviewerBModel:
+      type: model
+      harness: reviewerBHarness
+      default: gpt-6.1-sol
+    reviewerCHarness:
+      type: harness
+      default: copilot-cli
+      description: Third reviewer. Any harness. It has no sandbox; only its instructions keep it from editing.
+    reviewerCModel:
+      type: model
+      harness: reviewerCHarness
+    fixHarness:
+      type: harness
+      default: claude-cli
+      description: Weighs the three reviews and makes the fixes.
+    fixModel:
+      type: model
+      harness: fixHarness
+      default: opus
+      description: Deciding which findings are real takes judgment, so pick a capable model.
+
+# The reviewers share one checkout and run at the same time, so none of them may
+# edit it. Reviewers A and B run in a read-only sandbox: terminal commands cannot
+# write to the workspace (on Claude Code, its Write and Edit tools still follow
+# tool permissions). Reviewer C relies on its instructions alone. Only the fix
+# step edits the code.
+resumeSession: false
+
+steps:
+  - parallel:
+      - name: review-a
+        harness: "{reviewerAHarness}"
+        model: "{reviewerAModel}"
+        sandbox: true
+        sandboxMode: read-only
+        prompt: &reviewPrompt |
+          Review the work on this branch before it merges into {baseBranch}. You are one of
+          three independent reviewers running at the same time. Do not edit, create or delete
+          any file, and do not run commands that change the repository: report only.
+
+          Read what changed: run `git log {baseBranch}..HEAD` for the commits and
+          `git diff {baseBranch}...HEAD` for the committed changes. Uncommitted changes are here:
+          ~diff
+
+          Look, in this order, for:
+
+          1. Correctness: logic errors, unhandled edge cases, broken error handling, races, and
+             behavior that no longer matches what callers expect.
+          2. Security: untrusted input reaching a shell, a file path or a query; secrets in code
+             or logs; weakened checks.
+          3. Tests: changed behavior with no test, and tests that would pass even if the code
+             were wrong.
+
+          Skip style nits. Report each finding as:
+
+          - **Location:** file and line range
+          - **Problem:** what is wrong, and the input or sequence that triggers it
+          - **Severity:** high, medium or low
+          - **Confidence:** sure, or a suspicion worth checking
+
+          If you find nothing, say so plainly rather than inventing findings.
+      - name: review-b
+        harness: "{reviewerBHarness}"
+        model: "{reviewerBModel}"
+        sandbox: true
+        sandboxMode: read-only
+        prompt: *reviewPrompt
+      - name: review-c
+        harness: "{reviewerCHarness}"
+        model: "{reviewerCModel}"
+        prompt: *reviewPrompt
+    failFast: false
+
+  - name: fix-findings
+    harness: "{fixHarness}"
+    model: "{fixModel}"
+    priorContext: [1, 2, 3]
+    prompt: |
+      Three reviewers independently reviewed this branch against {baseBranch}; their reports
+      are attached above. If a reviewer failed or produced no report, work with the others.
+
+      1. Merge the findings: group reports of the same problem, even when reviewers describe it
+         differently.
+      2. Verify each one against the code yourself. A finding two or three reviewers agree on
+         is likely real; a finding only one reviewer made needs your own confirmation. Reject
+         findings that are wrong, and say why.
+      3. Fix every confirmed problem with the smallest correct change, following the codebase's
+         existing patterns. Add a test for each fixed bug where the codebase has tests for that
+         area. Don't refactor unrelated code.
+
+      End with a table of findings: each one, which reviewers raised it, your verdict
+      (fixed, rejected, or left as an open question), and why.
+    endCondition:
+      script: "{testCommand}"
+      maxRetries: 3
+      retryPrompt: |
+        The tests fail after your review fixes. Fix the cause without skipping tests or
+        weakening assertions:
+        $endCondition:stdout
+        $endCondition:stderr

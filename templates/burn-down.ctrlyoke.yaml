@@ -1,0 +1,111 @@
+schemaVersion: 1
+_templateMeta:
+  name: Burn Down
+  description: Drive a count to zero, such as lint warnings, type errors, TODOs or deprecated calls. Retries in fresh sessions until the count command prints 0, then makes sure the tests still pass.
+  author: nhickster
+  tags: [code-quality, cleanup, validation, testing]
+  variables:
+    goal:
+      type: text
+      multiline: true
+      required: true
+      description: What is being burned down, and how each item should be fixed (e.g. "Replace every call to the deprecated fetchUser() with getUser(), passing the same id").
+    listCommand:
+      type: text
+      required: true
+      description: A command that lists the remaining items, which the AI runs to find its work (e.g. npx eslint . or rg -n "TODO").
+    countCommand:
+      type: text
+      required: true
+      description: A command that prints only the number of remaining items, such as git grep -n "TODO" | wc -l on macOS or Linux, or a small script in your repository that works on every platform. The run is done when it prints 0.
+    order:
+      type: select
+      options:
+        - one file at a time, finishing each file before starting the next
+        - one kind of item at a time, such as one lint rule, across the whole codebase
+        - the files with the most items first
+      default: one file at a time, finishing each file before starting the next
+      description: How each attempt chooses what to work on.
+    testCommand:
+      type: text
+      default: npm test
+      description: The command that runs your test suite. The last step makes it pass.
+
+# The end condition compares the count command's output with "0" instead of
+# reading an exit code. Each retry starts a fresh session
+# (resumeSessionOnRetry: false), so a long burn-down never fills one context
+# window: the count and the list command carry everything the next attempt
+# needs. Raise maxRetries for a big backlog.
+resumeSession: false
+
+steps:
+  - name: burn-down
+    preCondition:
+      script: "{countCommand}"
+      compareSource: stdout
+      expected: "0"
+      onPass: skipPrompt
+      onFail: continue
+    prompt: &burnDownPrompt |
+      Goal: drive this count to zero.
+
+      {goal}
+
+      Run `{listCommand}` to see what remains. Work through it {order}. Fix as many items as
+      you can do well in this session; another session picks up where you stop, so leave every
+      file you touch in a finished, working state rather than half-converted.
+
+      Fix each item properly. Don't hide it from the count: no suppression or ignore comments,
+      no excluding files, and no renaming things to dodge the search. If an item can't be fixed
+      safely, leave it and say why.
+
+      Keep the change behavior-preserving. Don't refactor beyond what each fix needs.
+
+      End by running `{countCommand}` and reporting the count before and after, and anything
+      you left alone and why.
+    endCondition:
+      script: "{countCommand}"
+      compareSource: stdout
+      expected: "0"
+      onFail: retry
+      maxRetries: 10
+      resumeSessionOnRetry: false
+      retryPrompt: |
+        The count is now $endCondition:actual; the goal is 0. Earlier sessions have already
+        worked on this, so start by running `{listCommand}` to see what remains.
+
+        Goal:
+
+        {goal}
+
+        Work through what remains {order}. Leave every file you touch in a finished, working
+        state. Don't hide items from the count with suppression comments, excluded files or
+        renames. End by reporting the count before and after.
+
+  - name: keep-tests-green
+    preCondition:
+      script: "{testCommand}"
+      onPass: skipPrompt
+      onFail: continue
+    prompt: |
+      A burn-down just ran on this codebase:
+
+      {goal}
+
+      The test suite ({testCommand}) now fails:
+
+      $preCondition:stdout
+      $preCondition:stderr
+
+      Find which burn-down change broke each test and fix the code so it is correct and the
+      burn-down still holds: `{countCommand}` must keep printing 0. Don't skip tests or weaken
+      assertions. If a test asserted the old behavior on purpose and the new behavior is
+      intended, update the test and say why.
+    endCondition:
+      script: "{testCommand}"
+      maxRetries: 3
+      retryPrompt: |
+        Tests are still failing. Fix them at their root cause, without skipping tests or
+        weakening assertions, and keep `{countCommand}` at 0:
+        $endCondition:stdout
+        $endCondition:stderr

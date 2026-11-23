@@ -2,6 +2,31 @@
   "schemaVersion": 1,
   "templates": [
     {
+      "id": "burn-down",
+      "name": "Burn Down",
+      "description": "Drive a count to zero, such as lint warnings, type errors, TODOs or deprecated calls. Retries in fresh sessions until the count command prints 0, then makes sure the tests still pass.",
+      "tags": [
+        "code-quality",
+        "cleanup",
+        "validation",
+        "testing"
+      ],
+      "file": "burn-down.ctrlyoke.yaml",
+      "author": "nhickster"
+    },
+    {
+      "id": "green-build",
+      "name": "Green Build",
+      "description": "Format, then lint, typecheck and test, with an AI fix step behind each check. A fix step runs only when its check fails, so an already green branch costs no AI turns.",
+      "tags": [
+        "testing",
+        "code-quality",
+        "validation"
+      ],
+      "file": "green-build.ctrlyoke.yaml",
+      "author": "nhickster"
+    },
+    {
       "id": "review-branch",
       "name": "Review Branch",
       "description": "Review the current branch against its base, fix what the review finds, and keep the tests passing.",
@@ -12,6 +37,20 @@
         "testing"
       ],
       "file": "review-branch.ctrlyoke.yaml",
+      "author": "nhickster"
+    },
+    {
+      "id": "second-opinion-review",
+      "name": "Second Opinion Review",
+      "description": "Three harnesses review the branch in parallel without editing anything. A fourth step merges their findings, fixes the real problems, and keeps the tests passing.",
+      "tags": [
+        "review",
+        "code-quality",
+        "git",
+        "parallel",
+        "testing"
+      ],
+      "file": "second-opinion-review.ctrlyoke.yaml",
       "author": "nhickster"
     }
   ]

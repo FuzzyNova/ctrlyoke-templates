@@ -1,0 +1,123 @@
+schemaVersion: 1
+_templateMeta:
+  name: Green Build
+  description: Format, then lint, typecheck and test, with an AI fix step behind each check. A fix step runs only when its check fails, so an already green branch costs no AI turns.
+  author: nhickster
+  tags: [testing, code-quality, validation]
+  variables:
+    formatCommand:
+      type: text
+      default: npm run format
+      description: Your formatter. Runs as a plain script step, with no AI. Enter node -e 0 to skip formatting.
+    lintCommand:
+      type: text
+      default: npm run lint
+      description: Your linter. It must exit non-zero when it finds problems. Enter node -e 0 to skip this check.
+    typecheckCommand:
+      type: text
+      default: npx tsc --noEmit
+      description: Your type checker (e.g. npx tsc --noEmit, mypy ., cargo check). Enter node -e 0 to skip this check.
+    testCommand:
+      type: text
+      default: npm test
+      description: The command that runs your test suite (e.g. npm test, pytest, cargo test).
+
+# Each fix step's preCondition runs its check first. A passing check skips the
+# step (onPass: skipPrompt); a failing check runs the step (onFail: continue)
+# with the check's output already in the prompt. The end condition then runs
+# the same check again and retries until it passes.
+#
+# Every fix step starts a fresh session: the check output is all the context
+# it needs.
+resumeSession: false
+
+steps:
+  - name: format
+    type: script
+    script: "{formatCommand}"
+
+  - name: fix-lint
+    preCondition:
+      script: "{lintCommand}"
+      onPass: skipPrompt
+      onFail: continue
+    prompt: |
+      The linter ({lintCommand}) reports problems. Its output:
+
+      $preCondition:stdout
+      $preCondition:stderr
+
+      Fix each reported problem in the code. Follow the codebase's existing patterns and keep
+      each change as small as the rule allows; don't refactor unrelated code.
+
+      Don't silence the linter: no disable comments, no rule changes in the lint configuration,
+      and no new ignore patterns, unless a rule is clearly wrong for a specific line. If you do
+      disable one, say which line and why.
+
+      End with a short summary of what you fixed.
+    endCondition:
+      script: "{lintCommand}"
+      maxRetries: 3
+      retryPrompt: |
+        The linter still reports problems. Fix them without disabling rules:
+        $endCondition:stdout
+        $endCondition:stderr
+
+  - name: fix-types
+    preCondition:
+      script: "{typecheckCommand}"
+      onPass: skipPrompt
+      onFail: continue
+    prompt: |
+      The type checker ({typecheckCommand}) reports errors. Its output:
+
+      $preCondition:stdout
+      $preCondition:stderr
+
+      Fix each error at its cause. Usually the code is wrong; sometimes a type declaration is
+      out of date. Don't paper over an error with a cast to any, a non-null assertion, an
+      ignore comment, or by loosening compiler options. Keep the linter ({lintCommand}) passing
+      too.
+
+      End with a short summary: each error's cause and what you changed.
+    endCondition:
+      script: "{typecheckCommand}"
+      maxRetries: 3
+      retryPrompt: |
+        The type checker still reports errors. Fix them at their cause, without casts or
+        ignore comments:
+        $endCondition:stdout
+        $endCondition:stderr
+
+  - name: fix-tests
+    preCondition:
+      script: "{testCommand}"
+      onPass: skipPrompt
+      onFail: continue
+    prompt: |
+      The test suite ({testCommand}) fails. Its output:
+
+      $preCondition:stdout
+      $preCondition:stderr
+
+      Make the failing tests genuinely pass:
+
+      1. Read each failure: which test failed and the actual error.
+      2. Trace it to its root cause. Usually the code under test is wrong; sometimes the test is.
+      3. Fix the code when it is broken. Change a test only when the test itself is wrong (it
+         asserts outdated behavior or has bad setup), and say why.
+
+      Never mask a failure: don't skip, delete or comment out tests, and don't weaken
+      assertions. If a failure is environmental (a missing dependency, a misconfigured command),
+      say so instead of forcing a code change. Keep the linter ({lintCommand}) and the type
+      checker ({typecheckCommand}) passing too.
+
+      End with a short summary: what failed, the root cause, and what you changed.
+    endCondition:
+      script: "{testCommand}"
+      maxRetries: 5
+      retryPrompt: |
+        Tests are still failing. Fix the remaining failures at their root cause, without
+        skipping tests or weakening assertions:
+        $endCondition:stdout
+        $endCondition:stderr
