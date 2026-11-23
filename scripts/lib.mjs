@@ -21,11 +21,28 @@ export const TEMPLATE_EXTENSIONS = [
 ];
 
 /**
- * `<author>-<slug>`: lowercase letters, digits and hyphens, at least one hyphen,
- * at most 100 characters. ctrlyoke installs the file under this name, so it must
- * stay portable and path-free.
+ * A template's id is its file basename, such as `review-branch`: lowercase
+ * letters and digits in hyphen-separated words, 3 to 100 characters. ctrlyoke
+ * installs the file under this name, so it must stay portable and path-free.
+ * Credit goes in `_templateMeta.author`, not the file name.
  */
-export const TEMPLATE_ID_PATTERN = /^(?=.{3,100}$)[a-z0-9]+(?:-[a-z0-9]+)+$/;
+export const TEMPLATE_ID_PATTERN = /^(?=.{3,100}$)[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/**
+ * Limits ctrlyoke applies when it reads index.json
+ * (`src/utils/CommunityTemplateClient.ts`). It truncates or drops anything
+ * longer, so the check fails instead of letting text be cut off silently.
+ */
+export const META_LIMITS = {
+  nameLength: 120,
+  authorLength: 120,
+  descriptionLength: 500,
+  tagCount: 10,
+  tagLength: 40,
+};
+
+/** Tags are short lowercase keywords, like the ids. */
+export const TAG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /** The same YAML schema ctrlyoke loads workflows with (YAML 1.2 core plus merge keys). */
 export const WORKFLOW_YAML_SCHEMA = yaml.CORE_SCHEMA.withTags(yaml.mergeTag);

@@ -13,13 +13,18 @@ import Ajv from "ajv/dist/2020.js";
 import addFormats from "ajv-formats";
 import {
   listTemplateFiles,
+  META_LIMITS,
   readTemplate,
+  TAG_PATTERN,
   TEMPLATE_ID_PATTERN,
   templateIdOf,
 } from "./lib.mjs";
 
 const CTRLYOKE_REPO = "FuzzyNova/ctrlyoke";
 const SCHEMA_PATH_IN_REPO = "schemas/workflow-schema.json";
+const BUILT_IN_MANIFEST_PATH_IN_REPO = "src/templates/workflows/manifest.json";
+/** Built-in ids that have no file in the manifest. */
+const UNLISTED_BUILT_IN_IDS = ["blank"];
 const REQUIRED_EXTENSION = ".ctrlyoke.yaml";
 
 /**
@@ -68,12 +73,32 @@ async function fetchJson(url) {
   return response.json();
 }
 
-async function loadSchema() {
+/**
+ * The workflow schema, and the ids of ctrlyoke's built-in templates from the
+ * same release. A community template may not reuse a built-in id: it would sit
+ * in the template picker beside the built-in under the same name.
+ */
+async function loadReferences() {
   const localPath = argValue("--schema") ?? process.env.WORKFLOW_SCHEMA_PATH;
   if (localPath) {
+    // Inside a ctrlyoke checkout, read the built-in manifest beside the schema.
+    const manifestPath = path.resolve(
+      path.dirname(localPath),
+      "..",
+      BUILT_IN_MANIFEST_PATH_IN_REPO,
+    );
+    const manifest = await readFile(manifestPath, "utf8")
+      .then(JSON.parse)
+      .catch(() => undefined);
+    if (!manifest) {
+      console.log(
+        `No built-in manifest at ${manifestPath}; skipping the built-in id check.`,
+      );
+    }
     return {
       source: path.resolve(localPath),
       schema: JSON.parse(await readFile(localPath, "utf8")),
+      builtInIds: builtInIdsOf(manifest),
     };
   }
   const tag =
@@ -83,8 +108,63 @@ async function loadSchema() {
         `https://api.github.com/repos/${CTRLYOKE_REPO}/releases/latest`,
       )
     ).tag_name;
-  const url = `https://raw.githubusercontent.com/${CTRLYOKE_REPO}/${tag}/${SCHEMA_PATH_IN_REPO}`;
-  return { source: `${CTRLYOKE_REPO}@${tag}`, schema: await fetchJson(url) };
+  const raw = `https://raw.githubusercontent.com/${CTRLYOKE_REPO}/${tag}`;
+  const [schema, manifest] = await Promise.all([
+    fetchJson(`${raw}/${SCHEMA_PATH_IN_REPO}`),
+    fetchJson(`${raw}/${BUILT_IN_MANIFEST_PATH_IN_REPO}`),
+  ]);
+  return {
+    source: `${CTRLYOKE_REPO}@${tag}`,
+    schema,
+    builtInIds: builtInIdsOf(manifest),
+  };
+}
+
+function builtInIdsOf(manifest) {
+  if (!manifest) return new Set();
+  const workflows = Array.isArray(manifest.workflows) ? manifest.workflows : [];
+  return new Set([
+    ...UNLISTED_BUILT_IN_IDS,
+    ...workflows.map((workflow) => workflow?.id).filter(Boolean),
+  ]);
+}
+
+/** Problems with `_templateMeta`'s display fields that the schema does not catch. */
+function metaProblems(meta) {
+  const problems = [];
+  const tooLong = (field, limit) => {
+    if (typeof meta[field] === "string" && meta[field].length > limit) {
+      problems.push(
+        `_templateMeta.${field} is longer than ${limit} characters`,
+      );
+    }
+  };
+  tooLong("name", META_LIMITS.nameLength);
+  tooLong("author", META_LIMITS.authorLength);
+  tooLong("description", META_LIMITS.descriptionLength);
+  if (meta.author !== undefined && !String(meta.author).trim()) {
+    problems.push("_templateMeta.author is empty; leave it out instead");
+  }
+  if (Array.isArray(meta.tags)) {
+    if (meta.tags.length > META_LIMITS.tagCount) {
+      problems.push(
+        `_templateMeta.tags has more than ${META_LIMITS.tagCount} tags`,
+      );
+    }
+    const seen = new Set();
+    for (const tag of meta.tags) {
+      if (typeof tag !== "string") continue; // the schema reports it
+      if (!TAG_PATTERN.test(tag) || tag.length > META_LIMITS.tagLength) {
+        problems.push(
+          `tag "${tag}": use lowercase letters, digits and hyphens, at most ${META_LIMITS.tagLength} characters`,
+        );
+      } else if (seen.has(tag)) {
+        problems.push(`tag "${tag}" is listed twice`);
+      }
+      seen.add(tag);
+    }
+  }
+  return problems;
 }
 
 function annotate(level, file, message) {
@@ -94,7 +174,7 @@ function annotate(level, file, message) {
   else console.log(`${level.toUpperCase()} ${relative}: ${message}`);
 }
 
-const { source, schema } = await loadSchema();
+const { source, schema, builtInIds } = await loadReferences();
 const ajv = new Ajv({ allErrors: true, allowUnionTypes: true });
 addFormats(ajv);
 const validate = ajv.compile(schema);
@@ -110,7 +190,7 @@ const fail = (file, message) => {
 for (const name of stray) {
   fail(
     name,
-    `templates/ may hold only <author>-<slug>${REQUIRED_EXTENSION} files`,
+    `templates/ may hold only <template-name>${REQUIRED_EXTENSION} files`,
   );
 }
 
@@ -122,7 +202,13 @@ for (const file of files) {
   if (!TEMPLATE_ID_PATTERN.test(id)) {
     fail(
       file,
-      "name the file <github-handle>-<template-name>: lowercase letters, digits and hyphens, at most 100 characters",
+      "name the file <template-name>: lowercase letters, digits and hyphens, 3 to 100 characters",
+    );
+  }
+  if (builtInIds.has(id)) {
+    fail(
+      file,
+      `"${id}" is the id of a ctrlyoke built-in template; choose another name`,
     );
   }
 
@@ -149,6 +235,7 @@ for (const file of files) {
     if (typeof meta.description !== "string" || !meta.description.trim()) {
       fail(file, "_templateMeta.description is required");
     }
+    for (const problem of metaProblems(meta)) fail(file, problem);
   }
 
   if (!validate(document)) {

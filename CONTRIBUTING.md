@@ -4,17 +4,29 @@ Thanks for sharing a template. A pull request adds **one template file** and not
 
 ## The file
 
-- Put it in `templates/`, named `<your-github-handle>-<template-name>.ctrlyoke.yaml`, for
-  example `octocat-review-branch.ctrlyoke.yaml`. Use lowercase letters, digits and hyphens
-  only. The name becomes the template's id and the file name ctrlyoke installs it under, so it
-  cannot be changed after it is merged.
+- Put it in `templates/`, named for what it does, such as `review-branch.ctrlyoke.yaml`. Use
+  lowercase letters, digits and hyphens only (3 to 100 characters). The name becomes the
+  template's id and the file name ctrlyoke installs it under, so it cannot be changed after it
+  is merged. Names are first come, first served, and a name used by one of ctrlyoke's built-in
+  templates (such as `fix-tests`) is not allowed. If the name you want is taken, pick a more
+  specific one rather than adding your handle.
 - Write it as a ctrlyoke workflow template: a workflow file with a `_templateMeta` block. See
   [Templates](https://ctrlyoke.dev/docs/workflows/templates) in the ctrlyoke docs, and start
   from ctrlyoke's **Template Starter** if you want an example of every variable type.
-- `_templateMeta.name` and `_templateMeta.description` are required. Once ctrlyoke's latest
-  release supports them, `_templateMeta.author` (your GitHub handle) and `_templateMeta.tags`
-  (a few short keywords) are welcome too; the check below tells you if they are not supported
-  yet.
+- Describe it in `_templateMeta`:
+
+  ```yaml
+  _templateMeta:
+    name: Review Branch # required, at most 120 characters
+    description: Review the current branch and fix what the review finds. # required, at most 500
+    author: octocat # your GitHub handle
+    tags: [review, git] # up to 10 lowercase keywords
+  ```
+
+  `name` and `description` are required. `author` and `tags` are optional but recommended:
+  `author` is how the gallery credits you, and `tags` help people find the template. Reuse
+  tags that other templates already have where they fit (see `index.json`).
+
 - Make it useful beyond your own project: put project-specific values (test commands, paths,
   branch names) in `{variables}` with sensible defaults.
 
@@ -35,7 +47,7 @@ Every pull request runs `npm run check`, which:
 
 1. Validates each template against the workflow schema of the **latest ctrlyoke release**,
    strictly: a field that release does not know fails.
-2. Checks the file name and the required `_templateMeta` fields.
+2. Checks the file name and the `_templateMeta` fields described above.
 3. Checks that `index.json` matches `templates/`.
 
 Run it locally before you push:

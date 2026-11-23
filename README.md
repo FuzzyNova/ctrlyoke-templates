@@ -6,9 +6,9 @@ request and checked against ctrlyoke's workflow schema before it is listed.
 
 ## Installing a template
 
-In ctrlyoke, open **Settings → Templates** and choose **Discover** in the page bar. Pick the
-**User** or **Workspace** scope in the drawer's title bar, then choose **Install** on a
-template. It is copied into `~/.ctrlyoke/templates/` or `.ctrlyoke/templates/` and shows up in
+In ctrlyoke 0.9.0 or later, open **Settings → Templates** and choose **Browse community
+templates**. Pick the **User** or **Workspace** scope in the drawer's title bar, then choose
+**Install** on a template. It is copied into `~/.ctrlyoke/templates/` or `.ctrlyoke/templates/` and shows up in
 **New Workflow** straight away. See
 [Community templates](https://ctrlyoke.dev/docs/workflows/templates#community-templates) in the
 ctrlyoke docs.

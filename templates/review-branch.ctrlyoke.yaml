@@ -2,6 +2,8 @@ schemaVersion: 1
 _templateMeta:
   name: Review Branch
   description: Review the current branch against its base, fix what the review finds, and keep the tests passing.
+  author: nhickster
+  tags: [review, code-quality, git, testing]
   variables:
     baseBranch:
       type: text

@@ -7,7 +7,7 @@ body:
     id: template
     attributes:
       label: Template
-      description: The template's file name or id, such as octocat-review-branch.
+      description: The template's file name or id, such as review-branch.
     validations:
       required: true
   - type: dropdown

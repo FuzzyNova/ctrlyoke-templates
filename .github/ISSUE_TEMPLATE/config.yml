@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A problem with ctrlyoke itself
+    url: https://github.com/FuzzyNova/ctrlyoke/issues
+    about: Bugs in the extension, CLI or the community template gallery belong in the ctrlyoke repository.
